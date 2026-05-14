@@ -10,19 +10,18 @@ build:
 runs-on: ubuntu-latest
 
 steps:
-  - name: Checkout
-    uses: actions/checkout@v4
+  - uses: actions/checkout@v4
 
   - name: Setup Java
     uses: actions/setup-java@v4
     with:
       distribution: temurin
-      java-version: 17
+      java-version: '17'
 
   - name: Setup Gradle
     uses: gradle/actions/setup-gradle@v3
 
-  - name: Generate Gradle Wrapper
+  - name: Generate Wrapper
     run: gradle wrapper
 
   - name: Grant Permission

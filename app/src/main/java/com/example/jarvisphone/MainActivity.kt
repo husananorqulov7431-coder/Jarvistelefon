@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,7 +77,10 @@ class MainActivity : ComponentActivity() {
                     )
 
                     QuickActions(onAction = viewModel::onQuickAction)
-                    ChatHistory(messages = uiState.messages)
+                    ChatHistory(
+                        messages = uiState.messages,
+                        modifier = Modifier.weight(1f)
+                    )
 
                     AssistantInput(
                         text = uiState.inputText,
@@ -170,12 +174,11 @@ private fun QuickActions(onAction: (String) -> Unit) {
 }
 
 @Composable
-private fun ChatHistory(messages: List<ChatMessage>) {
-    ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
-    ) {
+private fun ChatHistory(
+    messages: List<ChatMessage>,
+    modifier: Modifier = Modifier
+) {
+    ElevatedCard(modifier = modifier.fillMaxWidth()) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()

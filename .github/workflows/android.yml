@@ -23,11 +23,10 @@ steps:
     uses: gradle/actions/setup-gradle@v3
 
   - name: Generate Gradle Wrapper
-    run: |
-      gradle wrapper
+    run: gradle wrapper
 
-  - name: Grant execute permission
-    run: chmod +x ./gradlew
+  - name: Grant Permission
+    run: chmod +x gradlew
 
   - name: Build APK
     run: ./gradlew assembleDebug

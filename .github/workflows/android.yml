@@ -1,38 +1,37 @@
 name: Android Build
 
 on:
-push:
-branches:
-- main
+  push:
+    branches:
+      - main
 
 jobs:
-build:
-runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest
 
-steps:
-  - uses: actions/checkout@v4
+    steps:
+      - uses: actions/checkout@v4
 
-  - name: Setup Java
-    uses: actions/setup-java@v4
-    with:
-      distribution: temurin
-      java-version: '17'
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-  - name: Setup Gradle
-    uses: gradle/actions/setup-gradle@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
 
-  - name: Generate Wrapper
-    run: gradle wrapper
+      - name: Generate Wrapper
+        run: gradle wrapper
 
-  - name: Grant Permission
-    run: chmod +x gradlew
+      - name: Grant Permission
+        run: chmod +x gradlew
 
-  - name: Build APK
-    run: ./gradlew assembleDebug
+      - name: Build APK
+        run: ./gradlew assembleDebug
 
-  - name: Upload APK
-    uses: actions/upload-artifact@v4
-    with:
-      name: jarvis-apk
-      path: app/build/outputs/apk/debug/app-debug.apk
-
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-apk
+          path: app/build/outputs/apk/debug/app-debug.apk

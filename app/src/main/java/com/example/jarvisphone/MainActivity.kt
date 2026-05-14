@@ -2,25 +2,40 @@ package com.example.jarvisphone
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.example.jarvisphone.core.*
+import com.example.jarvisphone.core.ChatMessage
 import com.example.jarvisphone.ui.AppTheme
 import com.example.jarvisphone.vm.AssistantViewModel
 
@@ -35,62 +50,55 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
         requestNeededPermissions()
 
         setContent {
             AppTheme {
                 val uiState by viewModel.uiState.collectAsState()
 
-                Scaffold(
-                    topBar = {
-                        TopAppBar(
-                            title = { Text("Jarvis Phone") }
-                        )
-                    }
-                ) { padding ->
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding)
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        StatusCard(
-                            listening = uiState.isListening,
-                            speaking = uiState.isSpeaking,
-                            provider = uiState.lastProvider,
-                            error = uiState.lastError
-                        )
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Jarvis Phone",
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
 
-                        QuickActions(
-                            onAction = viewModel::onQuickAction
-                        )
+                    StatusCard(
+                        listening = uiState.isListening,
+                        speaking = uiState.isSpeaking,
+                        provider = uiState.lastProvider,
+                        error = uiState.lastError
+                    )
 
-                        ChatHistory(
-                            messages = uiState.messages
-                        )
+                    QuickActions(onAction = viewModel::onQuickAction)
+                    ChatHistory(messages = uiState.messages)
 
-                        AssistantInput(
-                            text = uiState.inputText,
-                            onTextChange = viewModel::onInputTextChange,
-                            onSend = { viewModel.submitText(uiState.inputText) },
-                            onMic = { viewModel.toggleVoice() },
-                            voiceEnabled = uiState.voiceEnabled
-                        )
-                    }
+                    AssistantInput(
+                        text = uiState.inputText,
+                        onTextChange = viewModel::onInputTextChange,
+                        onSend = { viewModel.submitText(uiState.inputText) },
+                        onMic = { viewModel.toggleVoice() },
+                        voiceEnabled = uiState.voiceEnabled
+                    )
                 }
             }
         }
     }
 
     private fun requestNeededPermissions() {
-        val required = arrayOf(
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.CALL_PHONE,
-            Manifest.permission.SEND_SMS,
-            Manifest.permission.POST_NOTIFICATIONS
-        )
+        val required = buildList {
+            add(Manifest.permission.RECORD_AUDIO)
+            add(Manifest.permission.CALL_PHONE)
+            add(Manifest.permission.SEND_SMS)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
 
         val missing = required.filter {
             ContextCompat.checkSelfPermission(this, it) != PackageManager.PERMISSION_GRANTED
@@ -132,7 +140,6 @@ private fun StatusCard(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun QuickActions(onAction: (String) -> Unit) {
     val actions = listOf(
@@ -141,28 +148,23 @@ private fun QuickActions(onAction: (String) -> Unit) {
         "chrome och",
         "settings och",
         "qidir sun'iy intellekt",
-        "battery",
         "clipboard get"
     )
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Quick actions", fontWeight = FontWeight.SemiBold)
-        FlowRowWithChips(actions, onAction)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun FlowRowWithChips(items: List<String>, onAction: (String) -> Unit) {
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items.forEach { item ->
-            AssistChip(
-                onClick = { onAction(item) },
-                label = { Text(item) }
-            )
+        actions.chunked(2).forEach { rowItems ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                rowItems.forEach { item ->
+                    AssistChip(
+                        onClick = { onAction(item) },
+                        label = { Text(item) }
+                    )
+                }
+            }
         }
     }
 }
@@ -195,10 +197,7 @@ private fun MessageBubble(message: ChatMessage) {
         MaterialTheme.colorScheme.secondaryContainer
     }
 
-    Surface(
-        color = color,
-        shape = RoundedCornerShape(16.dp)
-    ) {
+    Surface(color = color, shape = RoundedCornerShape(16.dp)) {
         Column(modifier = Modifier.padding(12.dp)) {
             Text(message.role.uppercase(), style = MaterialTheme.typography.labelSmall)
             Spacer(Modifier.height(4.dp))
@@ -222,7 +221,6 @@ private fun AssistantInput(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Command") },
             placeholder = { Text("telegram och, sms yoz, youtube och...") },
-            singleLine = false,
             minLines = 2
         )
 

@@ -4,55 +4,44 @@ import android.content.Context
 import com.example.jarvisphone.core.AiPlan
 import com.example.jarvisphone.core.ChatMessage
 import com.example.jarvisphone.core.CommandAction
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
 class AiPlanner(private val context: Context) {
 
-    private val json = Json { ignoreUnknownKeys = true }
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    private val providers = ProviderLoader(context).load()
+    private val providers: List<Provider> = ProviderLoader(context).load()
 
     fun plan(input: String, memory: List<ChatMessage>): AiPlan? {
         for (provider in providers) {
-            val key = provider.apiKey.orEmpty()
-            if (key.isBlank()) continue
+            val key = provider.apiKey.trim()
+            if (key.isBlank() || key.startsWith("PASTE_")) continue
 
             try {
-                val body = buildRequest(provider, input, memory)
                 val req = Request.Builder()
                     .url(provider.baseUrl)
                     .addHeader("Authorization", "Bearer $key")
                     .addHeader("Content-Type", "application/json")
-                    .post(body)
+                    .post(buildRequest(provider, input, memory))
                     .build()
 
                 client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        if (resp.code == 401 || resp.code == 403 || resp.code == 429 || resp.code >= 500) {
-                            continue
-                        }
-                        continue
-                    }
+                    if (!resp.isSuccessful) continue
 
                     val raw = resp.body?.string().orEmpty()
                     val content = extractContent(raw)
-                    val plan = parsePlan(content)
-                    if (plan != null) return plan.copy(providerName = provider.name)
+                    val parsed = parsePlan(content)
+                    if (parsed != null) return parsed.copy(providerName = provider.name)
                 }
             } catch (_: Exception) {
                 continue
@@ -64,16 +53,16 @@ class AiPlanner(private val context: Context) {
     private fun buildRequest(provider: Provider, input: String, memory: List<ChatMessage>): okhttp3.RequestBody {
         val messages = JSONArray()
 
-        val system = JSONObject().apply {
+        messages.put(JSONObject().apply {
             put("role", "system")
             put("content", loadSystemPrompt())
-        }
-        messages.put(system)
+        })
 
-        memory.takeLast(8).forEach {
+        memory.takeLast(8).forEach { msg ->
+            val role = if (msg.role == "user") "user" else "assistant"
             messages.put(JSONObject().apply {
-                put("role", if (it.role == "user") "user" else "assistant")
-                put("content", it.text)
+                put("role", role)
+                put("content", msg.text)
             })
         }
 
@@ -92,41 +81,52 @@ class AiPlanner(private val context: Context) {
     }
 
     private fun extractContent(raw: String): String {
-        val root = JSONObject(raw)
-        val choices = root.optJSONArray("choices") ?: return raw
-        if (choices.length() == 0) return raw
-        val msg = choices.getJSONObject(0).optJSONObject("message") ?: return raw
-        return msg.optString("content", raw)
+        return try {
+            val root = JSONObject(raw)
+            val choices = root.optJSONArray("choices") ?: return raw
+            if (choices.length() == 0) return raw
+            val message = choices.getJSONObject(0).optJSONObject("message") ?: return raw
+            message.optString("content", raw)
+        } catch (_: Exception) {
+            raw
+        }
     }
 
     private fun parsePlan(raw: String): AiPlan? {
-        val cleaned = raw.trim().removePrefix("```json").removeSuffix("```").trim()
+        val cleaned = raw.trim()
+            .removePrefix("```json")
+            .removePrefix("```")
+            .removeSuffix("```")
+            .trim()
+
         return try {
             val obj = JSONObject(cleaned)
             val reply = obj.optString("reply", "")
             val actionsJson = obj.optJSONArray("actions") ?: JSONArray()
-            val actions = buildList {
-                for (i in 0 until actionsJson.length()) {
-                    val item = actionsJson.getJSONObject(i)
-                    val type = item.optString("type")
-                    val payload = item.optJSONObject("payload") ?: JSONObject()
-                    when (type) {
-                        "open_app" -> add(CommandAction.OpenApp(payload.optString("name")))
-                        "open_url" -> add(CommandAction.OpenUrl(payload.optString("url")))
-                        "search_web" -> add(CommandAction.SearchWeb(payload.optString("query")))
-                        "send_sms" -> add(CommandAction.SendSms(payload.optString("number"), payload.optString("message")))
-                        "dial" -> add(CommandAction.Dial(payload.optString("number")))
-                        "speak" -> add(CommandAction.Speak(payload.optString("text")))
-                        "notify" -> add(CommandAction.Notify(payload.optString("title", "Jarvis"), payload.optString("text")))
-                        "toast" -> add(CommandAction.Toast(payload.optString("text")))
-                        "vibrate" -> add(CommandAction.Vibrate(payload.optLong("durationMs", 200L)))
-                        "clipboard_set" -> add(CommandAction.ClipboardSet(payload.optString("text")))
-                        "clipboard_get" -> add(CommandAction.ClipboardGet)
-                        "open_settings" -> add(CommandAction.OpenSettings)
-                        "open_termux" -> add(CommandAction.TermuxOpen)
-                    }
+            val actions = mutableListOf<CommandAction>()
+
+            for (i in 0 until actionsJson.length()) {
+                val item = actionsJson.optJSONObject(i) ?: continue
+                val type = item.optString("type")
+                val payload = item.optJSONObject("payload") ?: JSONObject()
+
+                when (type) {
+                    "open_app" -> actions.add(CommandAction.OpenApp(payload.optString("name")))
+                    "open_url" -> actions.add(CommandAction.OpenUrl(payload.optString("url")))
+                    "search_web" -> actions.add(CommandAction.SearchWeb(payload.optString("query")))
+                    "send_sms" -> actions.add(CommandAction.SendSms(payload.optString("number"), payload.optString("message")))
+                    "dial" -> actions.add(CommandAction.Dial(payload.optString("number")))
+                    "speak" -> actions.add(CommandAction.Speak(payload.optString("text")))
+                    "notify" -> actions.add(CommandAction.Notify(payload.optString("title", "Jarvis"), payload.optString("text")))
+                    "toast" -> actions.add(CommandAction.Toast(payload.optString("text")))
+                    "vibrate" -> actions.add(CommandAction.Vibrate(payload.optLong("durationMs", 200L)))
+                    "clipboard_set" -> actions.add(CommandAction.ClipboardSet(payload.optString("text")))
+                    "clipboard_get" -> actions.add(CommandAction.ClipboardGet)
+                    "open_settings" -> actions.add(CommandAction.OpenSettings)
+                    "open_termux" -> actions.add(CommandAction.TermuxOpen)
                 }
             }
+
             AiPlan(providerName = "unknown", reply = reply, actions = actions)
         } catch (_: Exception) {
             null
@@ -142,26 +142,15 @@ class AiPlanner(private val context: Context) {
     }
 }
 
-@Serializable
-private data class ProviderFile(
-    val name: String,
-    @SerialName("baseUrl") val baseUrl: String,
-    @SerialName("apiKey") val apiKey: String,
-    val model: String,
-    @SerialName("timeoutSec") val timeoutSec: Int = 45
-)
-
 private data class Provider(
     val name: String,
     val baseUrl: String,
     val apiKey: String,
     val model: String,
     val timeoutSec: Int
-) {
-}
+)
 
 private class ProviderLoader(private val context: Context) {
-    private val json = Json { ignoreUnknownKeys = true }
 
     fun load(): List<Provider> {
         val text = readAsset("providers.json")
@@ -169,9 +158,27 @@ private class ProviderLoader(private val context: Context) {
             ?: return emptyList()
 
         return try {
-            val parsed = json.decodeFromString<List<ProviderFile>>(text)
-            parsed.map {
-                Provider(it.name, it.baseUrl, it.apiKey, it.model, it.timeoutSec)
+            val array = JSONArray(text)
+            val result = mutableListOf<Provider>()
+
+            for (i in 0 until array.length()) {
+                val item = array.optJSONObject(i) ?: continue
+
+                result.add(
+                    Provider(
+                        name = item.optString("name"),
+                        baseUrl = item.optString("baseUrl"),
+                        apiKey = item.optString("apiKey"),
+                        model = item.optString("model"),
+                        timeoutSec = item.optInt("timeoutSec", 45)
+                    )
+                )
+            }
+
+            result.filter {
+                it.name.isNotBlank() &&
+                it.baseUrl.isNotBlank() &&
+                it.model.isNotBlank()
             }
         } catch (_: Exception) {
             emptyList()
@@ -180,7 +187,7 @@ private class ProviderLoader(private val context: Context) {
 
     private fun readAsset(name: String): String? {
         return try {
-            context.assets.open(name).use(InputStream::readBytes).toString(Charsets.UTF_8)
+            context.assets.open(name).use { it.readBytes().toString(Charsets.UTF_8) }
         } catch (_: Exception) {
             null
         }
